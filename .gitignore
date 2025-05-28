@@ -1,0 +1,13 @@
+__pycache__/
+**/__pycache__/**
+logs/best-logs/
+logs/picardie-acc-gdd/
+logs/sentinel2-acc-gdd/
+logs/landsat8-acc-gdd
+history/
+logs/
+logs1/
+logs2/
+transfer
+.vscode
+dustbin
