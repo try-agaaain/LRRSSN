@@ -10,10 +10,6 @@
 
 If you use this method in your research, please cite:
 
-## Related Publication
-
-If you use this method in your research, please cite:
-
 ```bibtex
 @article{chen2024lrrssn,
   author={Chen, Yong and Chen, Maolin and He, Wei and Zeng, Jinshan and Huang, Min and Zheng, Yu-Bang},
