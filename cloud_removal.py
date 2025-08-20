@@ -12,41 +12,6 @@ from load_data import load_dataset
 from tools import show_result, cal_psnr, show_loss_history, get_args, normal, cal_ssim
 from gdd.GDD import gdd as net
 
-def set_seed(seed=4096):
-    torch.manual_seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.enabled = True
-    torch.use_deterministic_algorithms(True, warn_only=True)
-
-def thres_21(L, tau, M, N, B):
-    S = torch.sqrt(torch.sum(torch.mul(L, L), 2))
-    S[S == 0] = 1
-    T = 1 - tau / S
-    T[T < 0] = 0
-    R = T.reshape(M, N, 1).repeat((1, 1, B))
-    res = torch.mul(R, L)
-    return res
-
-
-def deal_real_data_for_gdd(Noisy):
-    """
-    数据的维度：M, N, B, T
-    将图像尺寸裁剪为32的倍数，把云层最少的图像作为引导图像
-    返回Clean，Noisy，Mask和Guide，他们的维度均为M, N, B, T
-    """
-    Noisy = Noisy[:, :, [2, 3, 4, 8], :]
-    M, N, B, T = Noisy.shape
-    M, N = M - M % 32, N - N % 32   # 确保图像尺寸为32的倍数
-    Noisy = Noisy[:M, :N, :, :]
-    Guide = Noisy[:M, :N, :, [0]].repeat(1, 1, 1, T)
-    return Noisy, Guide
-
 ################################ 参数设置 ################################
 class CloudRemoval():
     def __init__(self, dtype, device,
@@ -67,6 +32,43 @@ class CloudRemoval():
         # 设置锁
         self.spin_lock = threading.Lock()
         self.get_args = get_args
+
+    @staticmethod
+    def set_seed(seed=4096):
+        torch.manual_seed(seed)
+        os.environ['PYTHONHASHSEED'] = str(seed)
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        np.random.seed(seed)
+        random.seed(seed)
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.enabled = True
+        torch.use_deterministic_algorithms(True, warn_only=True)
+
+    @staticmethod
+    def thres_21(L, tau, M, N, B):
+        S = torch.sqrt(torch.sum(torch.mul(L, L), 2))
+        S[S == 0] = 1
+        T = 1 - tau / S
+        T[T < 0] = 0
+        R = T.reshape(M, N, 1).repeat((1, 1, B))
+        res = torch.mul(R, L)
+        return res
+
+    @staticmethod
+    def deal_real_data_for_gdd(Noisy):
+        """
+        数据的维度：M, N, B, T
+        将图像尺寸裁剪为32的倍数，把云层最少的图像作为引导图像
+        返回Clean，Noisy，Mask和Guide，他们的维度均为M, N, B, T
+        """
+        Noisy = Noisy[:, :, [2, 3, 4, 8], :]
+        M, N, B, T = Noisy.shape
+        M, N = M - M % 32, N - N % 32   # 确保图像尺寸为32的倍数
+        Noisy = Noisy[:M, :N, :, :]
+        Guide = Noisy[:M, :N, :, [0]].repeat(1, 1, 1, T)
+        return Noisy, Guide
     def cloud_remove(self, data, rate, lambda2, rho, alpha, cloud_threshold, order, clean_weight, epoch_num):
         rho_orig = rho
         lambda1 = rate * rho
@@ -107,7 +109,7 @@ class CloudRemoval():
         # net_input = net_input.reshape(1, B * T, M, N).type(self.dtype).to(self.device)
         # 初始化网络
         channels = 32
-        # set_seed()
+        # CloudRemoval.set_seed()
         model = net( num_input_channels = B * T, 
                 num_output_channels = B * T,
                 num_channels_down = channels,
@@ -140,7 +142,7 @@ class CloudRemoval():
             ################################ 更新子问题X ################################
             loss_history, loss1_history, loss2_history = [], [], []
             X_save = None
-            set_seed()
+            CloudRemoval.set_seed()
             noise = torch.rand((1, B*T, int(M / 32), int(N / 32))).type(self.dtype).to(self.device)
             if clean_time != []:
                 cloud_time = [i for i in range(T) if i not in clean_time]
@@ -203,7 +205,7 @@ class CloudRemoval():
             ################################ 更新子问题C ################################
             L = Y - torch.mul(X, M_update)
             for t in range(T):
-                C[:, :, :, t] = thres_21(L[:, :, :, t], lambda2, M, N, B)
+                C[:, :, :, t] = CloudRemoval.thres_21(L[:, :, :, t], lambda2, M, N, B)
             ################################ 更新掩码M ################################
             if self.need_update_mask:
                 B_mean = torch.mean(torch.abs(C), dim=2).reshape(M, N, 1, T).repeat((1, 1, B, 1))
